@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:fullscreen/fullscreen.dart';
+import 'package:nearby_connections/nearby_connections.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock/wakelock.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -48,22 +49,23 @@ class _LoadingState extends State<LoadingPage>{
     final prefs = await SharedPreferences.getInstance();
     final String? name = prefs.getString('name');
     final String? username = prefs.getString('username');
-    Future.delayed(const Duration(milliseconds: 4100), () async {
-      if(name!=null&&username!=null){
-        await Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) =>
-            MyHomePage(name: name, username: username)));
+    Timer.periodic(Duration(milliseconds:5), (loaderno) async {
+      if(increaser<1) {
+        setState(() {
+          increaser += 0.003;
+        });
       }
       else{
-        await Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) =>
-            ProfilePage()));
-      }
-    });
-    Timer.periodic(Duration(milliseconds:10), (loaderno) {
-      setState(() {
-        if(increaser<1) {
-          increaser += 0.003;
+        loaderno.cancel();
+        if(name!=null&&username!=null){
+          await Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) =>
+              MyHomePage(name: name, username: username)));
         }
-      });
+        else{
+          await Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) =>
+              ProfilePage()));
+        }
+      }
     });
   }
 
@@ -144,9 +146,6 @@ class _ProfileState extends State<ProfilePage>{
   int a = (DateTime.now().millisecondsSinceEpoch/1000).round().remainder(100000);
 
   save() async {
-    // showDialog(context: context, builder: (BuildContext context){
-    //   return BluffBox1();
-    // });
     if(nm.text.isNotEmpty) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('name',nm.text);
@@ -577,34 +576,6 @@ class _MultiPlayState extends State<MultiPlayPage>{
                             ),
                           )
                       ),
-                      Card(
-                          shape: false?RoundedRectangleBorder(
-                              side: BorderSide(
-                                  color: Colors.white,
-                                  width: 2
-                              ),
-                              borderRadius: BorderRadius.circular(5)
-                          ):null,
-                          color: Colors.green,
-                          child: InkWell(
-                            onTap: (){
-                              Navigator.pop(context);
-                              start2(host, 2);
-                            },
-                            child: Container(
-                                width: MediaQuery.of(context).size.height*0.35,
-                                child: Center(
-                                  child: Text(
-                                    'Camio',
-                                    style: GoogleFonts.pacifico(
-                                      color: Colors.white,
-                                      fontSize: 20,
-                                    ),
-                                  ),
-                                )
-                            ),
-                          )
-                      ),
                     ]
                 ),
               ),
@@ -797,8 +768,297 @@ class BluffPage extends StatefulWidget{
   State<BluffPage> createState() => _BluffState();
 }
 class _BluffState extends State<BluffPage> with WidgetsBindingObserver{
+
+  @override
+  void initState() {
+    // TODO: implement initState
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    name = widget.name;
+    username = widget.username;
+    // if(widget.host){
+    //   stts = 'Setting up room, please wait...';
+    //   isloading = true;
+    //   advertise();
+    // }
+    // else{
+    //   stts = 'searching rooms...';
+    //   isloading = true;
+    //   discover();
+    // }
+  }
+
+  List<String> players = [];
+  bool isloading = false, isinroom = false, gameStarted = false;
+  String name='', username='', stts = '';
+  final Strategy strategy = Strategy.P2P_STAR;
+  Map<String, String> playerids = new Map();
+  String serverid = '', serverName='';
+
+  Widget uprLayer(){
+    return Container(
+      padding: EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Color.fromRGBO(26, 4, 4, 1.0),
+      ),
+      child: Text("Room",
+        style: GoogleFonts.righteous(
+            textStyle: TextStyle(
+                color: Colors.white,
+                fontSize: 20
+            )
+        ),
+      ),
+    );
+  }
+  Widget item(int i){
+    return Card(
+      margin: EdgeInsets.all(4),
+      color: Colors.transparent,
+      child: ListTile(
+        title: Text(
+          players[i],
+          style: GoogleFonts.dosis(
+              textStyle: TextStyle(
+                color: Colors.white,
+              )
+          ),
+        ),
+        leading: CircleAvatar(
+          backgroundImage: AssetImage("assets/icons/avatar2.png"),
+        ),
+        shape: RoundedRectangleBorder(
+            side: BorderSide(
+                color: Colors.white,
+                width: 1
+            ),
+            borderRadius: BorderRadius.circular(5)
+        ),
+      ),
+    );
+    return Container(
+      child: Text(players[i]),
+    );
+  }
+  Widget mainlayer(){
+    return Expanded(
+      child: Container(
+        padding: EdgeInsets.only(left: 15, right: 15),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            Container(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Text("Players",
+                    style: GoogleFonts.righteous(
+                        textStyle: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18
+                        )
+                    ),
+                  ),
+                  SizedBox(
+                    width: MediaQuery.of(context).size.width*0.4,
+                    height: MediaQuery.of(context).size.height*0.65,
+                    child: Card(
+                      color: Color.fromRGBO(26, 4, 4, 1.0),
+                      child: ListView.builder(
+                        itemCount: players.length,
+                        itemBuilder: (BuildContext ctx, int i){
+                          return item(i);
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              width: MediaQuery.of(context).size.width*0.4,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text("\n",
+                    style: GoogleFonts.righteous(
+                        textStyle: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18
+                        )
+                    ),
+                  ),
+                  Text(
+                    "Bluff",
+                    style: GoogleFonts.pacifico(
+                        color: Colors.white,
+                        fontSize: 25
+                    ),
+                  ),
+                  Expanded(child: Container()),
+                  Container(
+                    width: MediaQuery.of(context).size.width*0.5,
+                    alignment: Alignment.center,
+                    child: Text(stts,
+                      style: GoogleFonts.righteous(
+                          textStyle: TextStyle(
+                              color: Color.fromRGBO(255, 221, 221, 1.0),
+                              fontSize: 18
+                          )
+                      ),
+                      maxLines: 4,
+                    ),
+                  ),
+                  Divider()
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  Widget lowerLayer(){
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.start,
+      children: [
+        Container(
+          padding: EdgeInsets.only(bottom: 8,left: 10),
+          child: IconButton(
+            icon: Image.asset("assets/icons/back.png"),
+            onPressed: (){
+              Navigator.of(context).pop();
+            },
+          ),
+        ),
+        Container(
+          padding: EdgeInsets.only(bottom: 8,left: 6),
+          child: IconButton(
+            icon: Image.asset("assets/icons/home.png"),
+            onPressed: (){
+              Navigator.of(context)..pop()..pop();
+            },
+          ),
+        ),
+        Expanded(child: Container()),
+        Visibility(
+          child: Container(
+            padding: EdgeInsets.only(bottom: 8,right: 12),
+            child: SizedBox(
+              height: MediaQuery.of(context).size.height*0.13,
+              width: MediaQuery.of(context).size.width*0.12,
+              child: IconButton(
+                icon: Image.asset(
+                  "assets/icons/start.png",
+                ),
+                onPressed: (){
+                  startBluff();
+                },
+              ),
+            ),
+          ),
+          visible: widget.host,
+        )
+
+      ],
+    );
+  }
+  Widget Room(){
+    return Scaffold(
+        body: Container(
+          decoration: BoxDecoration(
+            image: DecorationImage(
+                image: AssetImage("assets/bg/bg1.png"),
+                fit: BoxFit.fill
+            ),
+          ),
+          child: Container(
+            width: double.infinity,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                uprLayer(),
+                mainlayer(),
+                lowerLayer()
+              ],
+            ),
+          ),
+        )
+    );
+  }
+  Widget loadingOnGameStart(){
+    return Scaffold(
+      body: Container(
+          decoration: BoxDecoration(
+            image: DecorationImage(
+                image: AssetImage("assets/bg/bg1.png"),
+                fit: BoxFit.fill
+            ),
+          ),
+          alignment: Alignment.center,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Image.asset(
+                'assets/bg/loading.gif',
+                height: 140,
+              ),
+              Text(
+                stts,
+                style: GoogleFonts.kalam(
+                  color: Colors.white,
+                  fontSize: 24,
+                ),
+              ),
+              Divider(),
+              TextButton(onPressed: (){
+                Navigator.pop(context);
+              }, child: Text(
+                'cancel',
+                style: GoogleFonts.langar(
+                  color: Colors.white,
+                ),
+              )
+              )
+            ],
+          )
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Container();
+    if(isloading){
+      return loadingOnGameStart();
+    }
+    if(gameStarted){
+      // return Bluff();
+    }
+    return Room();
   }
+
+
+  startBluff(){
+    FullScreen.enterFullScreen(FullScreenMode.EMERSIVE_STICKY);
+    // if(widget.host) {
+    //   playerids.forEach((key, value) {
+    //     sendM(value, {'start': 'bluff'});
+    //   });
+    // }
+    // setState(() {
+    //   isloading = true;
+    //   stts = 'starting game..';
+    // });
+    // Future.delayed(const Duration(milliseconds: 1000), () async {
+    //   setState(() {
+    //     isloading = false;
+    //     gameStarted = true;
+    //     stts = '';
+    //   });
+    //   if(widget.host){
+    //     host_shuffle();
+    //   }
+    // });
+  }
+
 }
