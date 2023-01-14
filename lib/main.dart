@@ -1034,9 +1034,20 @@ class _BluffState extends State<BluffPage> with WidgetsBindingObserver{
       return loadingOnGameStart();
     }
     if(gameStarted){
-      // return Bluff();
+      return Bluff();
     }
     return Room();
+  }
+  @override
+  void dispose() {
+    // TODO: implement dispose
+    super.dispose();
+    if(widget.host){
+      Nearby().stopAdvertising();
+    }
+    else{
+      Nearby().stopDiscovery();
+    }
   }
 
   Widget acceptConnectionDialogBox(String id, dynamic info){
@@ -1404,6 +1415,16 @@ class _BluffState extends State<BluffPage> with WidgetsBindingObserver{
               });
             }
           }
+          if(mp.containsKey('bluffed')){
+            if(turn==name) animateTCards(true);
+            else           animateTCards(false);
+            bluffed.clear();
+            bluffed.addAll(jsonDecode(mp['bluffed']));
+            setState(() {
+              _task = 'bluff';
+              msg = 'claimed ${bluffed.length} cards of series ${bluffSeries}';
+            });
+          }
           if(mp.containsKey('turn')){
             setState(() {
               _user = turn;
@@ -1411,15 +1432,6 @@ class _BluffState extends State<BluffPage> with WidgetsBindingObserver{
               tt = true;
             });
             checkIFwin();
-          }
-          if(mp.containsKey('bluffed')){
-            animateTCards(false);
-            bluffed.clear();
-            bluffed.addAll(jsonDecode(mp['bluffed']));
-            setState(() {
-              _task = 'bluff';
-              msg = 'claimed ${bluffed.length} cards of series ${bluffSeries}';
-            });
           }
           if(mp.containsKey('series')){
             passC=0;
@@ -1559,7 +1571,7 @@ class _BluffState extends State<BluffPage> with WidgetsBindingObserver{
   int passC = 0;
   bool tt = false;
   Map<String, dynamic> quantity = {};
-  List<String> winners = [];
+  List<dynamic> winners = [];
 
   bool opened = false;
   String _task = '';
@@ -1694,8 +1706,8 @@ class _BluffState extends State<BluffPage> with WidgetsBindingObserver{
       tt = false;
     });
     if(widget.host){
-      bluff_Host();
       animateTCards(true);
+      bluff_Host();
     }
     else{
       Map<String, dynamic> msp = Map();
@@ -1728,7 +1740,7 @@ class _BluffState extends State<BluffPage> with WidgetsBindingObserver{
     }
   }
   checkIFwin(){
-    if(cards.length<=2&&(turn.split(' ')[0]==name)) {
+    if(cards.length<=2&&(turn==name||turn=='$name (Host)')) {
       if (widget.host) {
         pass_Host(false);
       }
@@ -1737,16 +1749,15 @@ class _BluffState extends State<BluffPage> with WidgetsBindingObserver{
       }
     }
   }
-  checkIFFinish(){
-    if(newStart) {
-      int i = 0;
-      quantity.values.forEach((element) {
-        if (element > 0) i++;
-      });
-      if (i <= 1) {
-        finishGame();
-      }
-    }
+  checkIFFinish(bool b){
+    int i = 0;
+    quantity.values.forEach((element) {
+      if (element > 0) i++;
+    });
+    return i;
+    // if (i <= 1) {
+    //   finishGame();
+    // }
   }
   Widget finishBox(){
     return Container(
@@ -1920,6 +1931,10 @@ class _BluffState extends State<BluffPage> with WidgetsBindingObserver{
     }
   }
   pass_Host(bool b){
+    if(checkIFFinish(true)<=1){
+      finishGame();
+      return;
+    }
     Map<String, dynamic> mmp = {};
     passC++;
     print('passCC $passC ${players.length}');
@@ -1950,6 +1965,10 @@ class _BluffState extends State<BluffPage> with WidgetsBindingObserver{
     checkIFwin();
   }
   bluff_Host(){
+    if(checkIFFinish(true)<=1){
+      finishGame();
+      return;
+    }
     allBluffedC.addAll(bluffed.keys);
     preBluffed = turn;
     passC = 0;
@@ -1975,7 +1994,6 @@ class _BluffState extends State<BluffPage> with WidgetsBindingObserver{
       sendM(value, msp);
     });
     checkIFwin();
-    checkIFFinish();
   }
   open_Host(){
     print(allBluffedC);
@@ -2030,71 +2048,76 @@ class _BluffState extends State<BluffPage> with WidgetsBindingObserver{
           }
           break;
       }
-      Future.delayed(Duration(seconds: 4),(){
-        setState(() {
-          opened = false;
-          msg = '$turn made it!';
-          if(g){
-            msg = '$turn bust!!';
-          }
-          if(turn==name||turn=='$name (Host)'){
-            msg = msg.replaceAll(turn, 'you');
-          }
-        });
-        playerids.forEach((key, value) {
-          sendM(value, {'opened':g});
-        });
-      });
-      Future.delayed(Duration(seconds: 5),(){
-        if(!g){
-          if(preBluffed==name||preBluffed=='$name (Host)'){
-            allBluffedC.forEach((element) {
-              sendCardTo('', element, true);
-            });
-          }
-          else{
-            allBluffedC.forEach((element) {
-              sendCardTo(playerids[preBluffed]! ,element, false);
+    });
 
-            });
-          }
+    Future.delayed(Duration(seconds: 4),(){
+      setState(() {
+        opened = false;
+        msg = '$turn made it!';
+        if(g){
+          msg = '$turn bust!!';
         }
-        else{
-          if(turn==name||turn=='$name (Host)'){
-            allBluffedC.forEach((element) {
-              sendCardTo(playerids[turn]! ,element, true);
-            });
-          }
-          else{
-            allBluffedC.forEach((element) {
-              sendCardTo(playerids[turn]! ,element, false);
-            });
-          }
+        if(turn==name||turn=='$name (Host)'){
+          msg = msg.replaceAll(turn, 'you');
         }
-        Map<String, dynamic> mhm = {};
-        setState(() {
-          newStart = true;
-          mhm['newStart'] = true;
-          allBluffedC = [];
-          bluffed = {};
-          msg = '';
-          if(g){
-            newS = (newS+1)%players.length;
-            trn = newS;
-            turn = players[trn];
-            trn = (trn+1)%players.length;
-            setState(() {
-              tt = true;
-            });
-          }
-        });
-        mhm['turn'] = turn;
-        playerids.forEach((key, value) {
-          sendM(value, mhm);
-        });
+      });
+      playerids.forEach((key, value) {
+        sendM(value, {'opened':g});
       });
     });
-    checkIFwin();
+
+    Future.delayed(Duration(seconds: 5),(){
+      if(!g){
+        if(preBluffed==name||preBluffed=='$name (Host)'){
+          allBluffedC.forEach((element) {
+            sendCardTo('', element, true);
+          });
+        }
+        else{
+          allBluffedC.forEach((element) {
+            sendCardTo(playerids[preBluffed]! ,element, false);
+
+          });
+        }
+      }
+      else{
+        if(turn==name||turn=='$name (Host)'){
+          allBluffedC.forEach((element) {
+            sendCardTo('' ,element, true);
+          });
+        }
+        else{
+          allBluffedC.forEach((element) {
+            sendCardTo(playerids[turn]! ,element, false);
+          });
+        }
+      }
+      Map<String, dynamic> mhm = {};
+      setState(() {
+        print(preBluffed+" || "+turn);
+        newStart = true;
+        mhm['newStart'] = true;
+        allBluffedC = [];
+        bluffed = {};
+        msg = '';
+        tt = true;
+        if(g){
+          trn = players.indexOf(preBluffed);
+          turn = preBluffed;
+          newS = trn;
+          trn = (trn+1)%players.length;
+        }
+      });
+      mhm['turn'] = turn;
+      playerids.forEach((key, value) {
+        sendM(value, mhm);
+      });
+      checkIFwin();
+      if(checkIFFinish(true)<=1){
+        finishGame();
+        return;
+      }
+    });
   }
 
   addItem(String element){
@@ -2606,7 +2629,8 @@ class _BluffState extends State<BluffPage> with WidgetsBindingObserver{
             visible: opened,
             child: Container(
               height: MediaQuery.of(context).size.height*0.3,
-              margin: EdgeInsets.only(right: MediaQuery.of(context).size.height*0.44,
+              margin: EdgeInsets.only(top: MediaQuery.of(context).size.height*0.3, bottom: MediaQuery.of(context).size.height*0.3,
+                  right: MediaQuery.of(context).size.height*0.44,
                   left: MediaQuery.of(context).size.height*0.44),
               alignment: Alignment.topCenter,
               padding: EdgeInsets.all(10),
